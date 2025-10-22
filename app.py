@@ -1,6 +1,7 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
+import numpy as np
 
 st.set_page_config(page_title="تحليل الأسهم - العرض والطلب", layout="wide")
 st.title("📈 تطبيق تحليل الأسهم الذكي")
@@ -12,37 +13,34 @@ if symbol:
     try:
         data = yf.download(symbol, period="6mo", interval="1d")
 
-        if not data.empty:
+        if not data.empty and "Close" in data.columns:
             st.subheader(f"بيانات السهم: {symbol}")
             st.line_chart(data["Close"], use_container_width=True)
 
-            try:
-                data["Change"] = data["Close"].pct_change() * 100
-                avg_demand = data[data["Change"] > 0]["Change"].mean(skipna=True)
-                avg_supply = abs(data[data["Change"] < 0]["Change"].mean(skipna=True))
-                trend = "🔺 الطلب أقوى" if avg_demand > avg_supply else "🔻 العرض أقوى"
+            # حساب متوسط الزيادة والانخفاض مع تجنب NaN
+            data["Change"] = data["Close"].pct_change() * 100
+            avg_demand = data[data["Change"] > 0]["Change"].mean(skipna=True)
+            avg_supply = abs(data[data["Change"] < 0]["Change"].mean(skipna=True))
 
-                st.markdown(f"**تحليل سريع:** {trend}")
-                st.write(f"متوسط زيادة السعر اليومية: {avg_demand:.2f}%")
-                st.write(f"متوسط انخفاض السعر اليومية: {avg_supply:.2f}%")
+            if pd.isna(avg_demand): avg_demand = 0
+            if pd.isna(avg_supply): avg_supply = 0
 
-                last_price = data["Close"].iloc[-1]
+            trend = "🔺 الطلب أقوى" if avg_demand > avg_supply else "🔻 العرض أقوى"
+            st.markdown(f"**تحليل سريع:** {trend}")
+            st.write(f"متوسط زيادة السعر اليومية: {avg_demand:.2f}%")
+            st.write(f"متوسط انخفاض السعر اليومية: {avg_supply:.2f}%")
 
-                # حساب القيمة المتوقعة بأمان
-                if pd.notna(last_price) and pd.notna(avg_demand) and pd.notna(avg_supply):
-                    expected_value = last_price * (1 + (avg_demand - avg_supply) / 200)
-                    change_value = expected_value - last_price
-                else:
-                    expected_value = last_price if pd.notna(last_price) else 0
-                    change_value = 0
+            # الحصول على آخر سعر موجود
+            last_price = data["Close"].dropna().iloc[-1] if not data["Close"].dropna().empty else 0
 
-                st.metric("القيمة المتوقعة للسهم", f"${expected_value:.2f}", f"{change_value:.2f}")
+            # حساب القيمة المتوقعة بأمان
+            expected_value = last_price * (1 + (avg_demand - avg_supply) / 200) if last_price != 0 else 0
+            change_value = expected_value - last_price
 
-            except Exception as e_inner:
-                st.error(f"خطأ أثناء الحساب: {e_inner}")
+            st.metric("القيمة المتوقعة للسهم", f"${expected_value:.2f}", f"{change_value:.2f}")
 
         else:
-            st.warning("⚠️ لم يتم العثور على بيانات لهذا الرمز.")
+            st.warning("⚠️ لم يتم العثور على بيانات كافية لهذا الرمز.")
 
     except Exception as e:
         st.error(f"حدث خطأ عند جلب البيانات: {e}")
